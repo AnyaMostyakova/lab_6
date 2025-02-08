@@ -1,10 +1,11 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
-#include <stdlib.h>
 
+// Функция для вывода информации о процессе
 void print_info(int process_number) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -14,58 +15,47 @@ void print_info(int process_number) {
            tm->tm_hour, tm->tm_min, tm->tm_sec, ts.tv_nsec / 1000000);
 }
 
+// Функция, выполняемая каждым процессом
 void process_function(int process_number) {
-    int sleep_time = process_number * 200;  // Время сна в мс
+    int sleep_time = process_number * 200;  // Время задержки
     while (1) {
         print_info(process_number);
-        usleep(sleep_time * 1000);  // Переводим мс в микросекунды
+        usleep(sleep_time * 1000);  // Перевод мс в мкс
     }
 }
 
-int main() {
+// Рекурсивное создание дерева процессов
+void create_process_tree(int current_generation, int max_generations, int num_children, int process_number) {
+    if (current_generation >= max_generations) {
+        process_function(process_number); // Если достигли предела поколений, запускаем функцию
+        exit(0); // Завершаем процесс после работы (никогда не достигнет сюда, т.к. бесконечный цикл)
+    }
+
+    for (int i = 0; i < num_children; i++) {
+        pid_t pid = fork();
+        if (pid == 0) { 
+            // Дочерний процесс
+            int new_process_number = process_number * 10 + i; // Уникальный номер процесса
+            create_process_tree(current_generation + 1, max_generations, num_children, new_process_number);
+        }
+    }
+
+    // Родитель ждет всех дочерних процессов
+    while (wait(NULL) > 0);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        printf("Использование: %s <количество поколений> <количество потомков на процесс>\n", argv[0]);
+        return 1;
+    }
+
+    int generations = atoi(argv[1]);  // Количество поколений
+    int children = atoi(argv[2]);     // Количество потомков
+
     printf("Родительский процесс P1: pid=%d\n", getpid());
 
-    // Создание процессов P2 и P3
-    pid_t p2 = fork();
-    if (p2 == 0) {
-        // Процесс P2
-        pid_t p4 = fork();
-        if (p4 == 0) {
-            process_function(4);
-            exit(0);
-        }
-
-        pid_t p5 = fork();
-        if (p5 == 0) {
-            process_function(5);
-            exit(0);
-        }
-
-        process_function(2);
-        exit(0);
-    }
-
-    pid_t p3 = fork();
-    if (p3 == 0) {
-        // Процесс P3
-        pid_t p6 = fork();
-        if (p6 == 0) {
-            process_function(6);
-            exit(0);
-        }
-
-        pid_t p7 = fork();
-        if (p7 == 0) {
-            process_function(7);
-            exit(0);
-        }
-
-        process_function(3);
-        exit(0);
-    }
-
-    // Родительский процесс ожидает завершения всех дочерних процессов
-    while (wait(NULL) > 0);
+    create_process_tree(0, generations, children, 1);
 
     return 0;
 }
